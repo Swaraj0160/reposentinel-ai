@@ -48,9 +48,15 @@ from reposentinel.export.sarif_exporter import export_report_to_sarif
 # UI Design System & Components
 from reposentinel.ui.styles import CUSTOM_CSS
 from reposentinel.ui.components import (
-    render_header,
-    render_metric_card,
+    render_top_bar,
+    render_hero_banner,
+    render_dashboard_metrics,
+    render_donut_chart,
+    render_recent_scan_panel,
+    render_priority_findings_panel,
+    render_quick_actions,
     render_empty_state,
+    render_metric_card,
     get_severity_badge_html,
     get_type_badge_html,
     get_verification_badge_html,
@@ -127,20 +133,25 @@ def execute_scan(target_path: Path, project_name: str):
 # --- SIDEBAR NAVIGATION (Deep Navy Workspace Sidebar) ---
 with st.sidebar:
     sidebar_header_html = (
-        '<div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1.25rem; padding-bottom:0.75rem; border-bottom:1px solid #1E2D4A;">'
-        '<span style="font-size:1.6rem; line-height:1;">🛡️</span>'
+        '<div style="display:flex; align-items:center; gap:0.65rem; margin-bottom:1.25rem; padding-bottom:0.75rem; border-bottom:1px solid #1E2D4A;">'
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2165F5" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">'
+        '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+        '</svg>'
         '<div>'
         '<div style="font-weight:700; color:#FFFFFF; font-size:1.1rem; line-height:1.2;">RepoSentinel AI</div>'
-        '<div style="font-size:0.75rem; color:#94A3B8;">Evidence-first security</div>'
+        '<div style="font-size:0.75rem; color:#8FA3C7;">Evidence-first security</div>'
         '</div></div>'
     )
     st.markdown(sidebar_header_html, unsafe_allow_html=True)
 
     # Navigation Menu
+    report: Optional[ScanReport] = st.session_state.get("scan_report")
+    total_findings = (len(report.secret_findings) + len(report.dependency_advisories)) if report else 0
+
     NAV_ITEMS = [
         "Overview",
         "Scan Repository",
-        "Findings",
+        f"Findings ({total_findings})" if total_findings > 0 else "Findings",
         "AI Analysis",
         "Test Lab",
         "Remediation",
@@ -148,34 +159,46 @@ with st.sidebar:
         "Learn & Architecture",
     ]
 
-    if st.session_state["current_page"] not in NAV_ITEMS:
+    curr_p = st.session_state["current_page"]
+    if curr_p.startswith("Findings"):
+        curr_idx = 2
+    elif curr_p in NAV_ITEMS:
+        curr_idx = NAV_ITEMS.index(curr_p)
+    else:
+        curr_idx = 0
         st.session_state["current_page"] = "Overview"
 
     selected_nav = st.radio(
         "Navigation",
         NAV_ITEMS,
-        index=NAV_ITEMS.index(st.session_state["current_page"]),
+        index=curr_idx,
         label_visibility="collapsed",
     )
-    if selected_nav != st.session_state["current_page"]:
-        st.session_state["current_page"] = selected_nav
+    norm_selected = "Findings" if selected_nav.startswith("Findings") else selected_nav
+    norm_current = "Findings" if st.session_state["current_page"].startswith("Findings") else st.session_state["current_page"]
+    if norm_selected != norm_current:
+        st.session_state["current_page"] = norm_selected
         st.rerun()
 
-    st.markdown("<div style='margin-top:2rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:2.25rem;'></div>", unsafe_allow_html=True)
 
-    # Quick Action: Load Sample Project
-    st.caption("DEMO WORKSPACE")
-    if st.button("Load Sample Project", use_container_width=True, type="secondary"):
-        sample_path = Path(__file__).resolve().parent / "sample_project"
-        if sample_path.exists():
-            execute_scan(sample_path, "sample_project (Demo)")
-            st.session_state["current_page"] = "Overview"
-            st.rerun()
+    # Bottom AI Configuration Card
+    conn_dot = '<span class="rs-status-dot rs-dot-online"></span>' if is_ollama_connected else '<span class="rs-status-dot rs-dot-warning"></span>'
+    status_label = "Ollama Online" if is_ollama_connected else "Ollama Offline"
+    active_m = st.session_state.get("selected_model", DEFAULT_MODEL)
 
-    st.markdown("<div style='margin-top:1rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rs-sidebar-card">'
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">'
+        '<span style="font-size:0.73rem; font-weight:700; color:#8FA3C7; text-transform:uppercase; letter-spacing:0.05em;">AI Configuration</span>'
+        f'<span style="font-size:0.75rem; color:#FFFFFF; display:flex; align-items:center; gap:0.35rem;">{conn_dot} {status_label}</span>'
+        '</div>'
+        f'<div style="font-size:0.82rem; color:#FFFFFF; font-family:monospace; margin-bottom:0.25rem;">{active_m}</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-    # Settings / Local AI Config
-    with st.expander("Configuration", expanded=False):
+    with st.expander("Settings & Endpoint", expanded=False):
         if available_models:
             curr_sel = st.session_state.get("selected_model", DEFAULT_MODEL)
             idx = 0
@@ -202,16 +225,71 @@ with st.sidebar:
         if is_ollama_connected:
             st.caption(f"Available models: {len(available_models)}")
         else:
-            st.caption("Ollama offline — deterministic fallback is active.")
+            st.caption("Deterministic heuristic fallback active.")
+
+    st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
+
+    # Sample Project Card
+    st.markdown(
+        '<div class="rs-sidebar-card">'
+        '<div style="font-size:0.73rem; font-weight:700; color:#8FA3C7; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:0.3rem;">Sample Project</div>'
+        '<p style="font-size:0.78rem; color:#94A3B8; margin:0 0 0.65rem 0; line-height:1.4;">Ready-to-scan demo codebase with intentional test cases and secrets.</p>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    if st.button("Load Sample Project", key="sidebar_btn_load_sample", use_container_width=True, type="secondary"):
+        sample_path = Path(__file__).resolve().parent / "sample_project"
+        if sample_path.exists():
+            execute_scan(sample_path, "sample_project (Demo)")
+            st.session_state["current_page"] = "Overview"
+            st.rerun()
 
 
-# Render Global SaaS Header Bar
-render_header(
+# Render Slim Global Top Bar (Search + Truthful Model Status Pill)
+search_query = render_top_bar(
     ollama_connected=is_ollama_connected,
     available_models=available_models,
     selected_model=st.session_state.get("selected_model", DEFAULT_MODEL),
-    version=VERSION,
 )
+
+# Live search filtering across findings if user types into top bar
+if search_query and search_query.strip():
+    q = search_query.strip().lower()
+    report: Optional[ScanReport] = st.session_state.get("scan_report")
+    matching_findings = []
+    if report:
+        for s in report.secret_findings:
+            if q in s.rule.lower() or q in s.file.lower() or q in s.evidence.lower():
+                matching_findings.append(("Secret", s.rule, f"{s.file}:{s.line}", s.severity))
+        for a in report.dependency_advisories:
+            if q in a.package.lower() or q in a.id.lower() or q in a.summary.lower():
+                matching_findings.append(("Dependency", f"{a.package} ({a.version})", a.id, a.severity))
+
+    st.markdown(
+        f'<div class="rs-card" style="border-left: 4px solid #2165F5; margin-bottom:1.25rem;">'
+        f'<div style="font-weight:700; color:#10264B; font-size:1rem; margin-bottom:0.25rem;">Search Results for "{search_query}"</div>'
+        f'<div style="font-size:0.85rem; color:#536B91; margin-bottom:0.6rem;">Found {len(matching_findings)} matching items in current audit state.</div>',
+        unsafe_allow_html=True
+    )
+    if matching_findings:
+        for m_type, m_title, m_loc, m_sev in matching_findings[:5]:
+            sev_b = get_severity_badge_html(m_sev)
+            type_b = get_type_badge_html(m_type)
+            st.markdown(
+                f'<div class="rs-priority-row">'
+                f'<div style="display:flex; align-items:center; gap:0.5rem;">'
+                f'{sev_b} {type_b} <strong style="color:#10264B; font-size:0.86rem;">{m_title}</strong> '
+                f'<span style="font-family:monospace; color:#536B91; font-size:0.8rem;">{m_loc}</span>'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+        if st.button("Open Full Findings Search →", key="btn_open_full_search"):
+            st.session_state["current_page"] = "Findings"
+            st.rerun()
+    else:
+        render_empty_state("🔍", f"No Findings Matching '{search_query}'", "Try searching for a different rule name, path, or package.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ==============================================================================
@@ -220,130 +298,38 @@ render_header(
 def render_overview_page():
     report: Optional[ScanReport] = st.session_state.get("scan_report")
 
-    # Welcome Section
-    st.markdown(
-        '<div style="margin-bottom:1.25rem;">'
-        '<h3 style="font-size:1.5rem; font-weight:700; color:#18263D; margin:0 0 0.25rem 0;">Repository Security Overview</h3>'
-        '<p style="font-size:0.92rem; color:#64748B; margin:0 0 1rem 0;">'
-        'Detect exposed secrets, investigate vulnerable dependencies, test edge cases, and verify proposed fixes.'
-        '</p></div>',
-        unsafe_allow_html=True
-    )
-
-    # Action Buttons Row
-    col_act1, col_act2, col_spacer = st.columns([1.6, 1.8, 3.5])
-    with col_act1:
-        if st.button("Scan Repository", type="primary", use_container_width=True):
-            st.session_state["current_page"] = "Scan Repository"
-            st.rerun()
-    with col_act2:
-        if st.button("Load Sample Project", type="secondary", use_container_width=True):
-            sample_path = Path(__file__).resolve().parent / "sample_project"
-            if sample_path.exists():
-                execute_scan(sample_path, "sample_project (Demo)")
-                st.rerun()
+    # 1. Pale-Blue Gradient Hero Banner Card
+    render_hero_banner()
 
     st.markdown("<div style='margin-top:1.25rem;'></div>", unsafe_allow_html=True)
 
-    # Metric Cards Row
-    if report:
-        crit_count = sum(1 for s in report.secret_findings if s.severity == "Critical") + sum(1 for a in report.dependency_advisories if a.severity == "Critical")
-        high_count = sum(1 for s in report.secret_findings if s.severity == "High") + sum(1 for a in report.dependency_advisories if a.severity == "High")
-        vuln_count = len(report.dependency_advisories)
-        files_count = report.files_scanned
+    # 2. 4 Equal-Width Tinted Metric Cards
+    render_dashboard_metrics(report)
 
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            render_metric_card("Critical Findings", crit_count, "Requires immediate attention", variant="critical" if crit_count > 0 else "default")
-        with m2:
-            render_metric_card("High Findings", high_count, "High risk security issues", variant="warning" if high_count > 0 else "default")
-        with m3:
-            render_metric_card("OSV Vulnerabilities", vuln_count, "Matched public advisories", variant="info" if vuln_count > 0 else "default")
-        with m4:
-            render_metric_card("Files Scanned", files_count, f"{len(report.dependencies_parsed)} dependencies parsed", variant="default")
+    st.markdown("<div style='margin-top:1.35rem;'></div>", unsafe_allow_html=True)
 
-        st.markdown("<div style='margin-top:1.25rem;'></div>", unsafe_allow_html=True)
+    # 3. 3-Column Middle Dashboard Layout
+    col_left, col_center, col_right = st.columns([1.2, 0.95, 1.45])
 
-        # Recent Scan Panel & Priority Findings
-        col_panel_left, col_panel_right = st.columns([1.3, 2.2])
+    with col_left:
+        # Left: Recent Scan Details with alternating rows
+        render_recent_scan_panel(report)
 
-        with col_panel_left:
-            st.markdown(
-                '<div class="rs-card" style="height:100%;">'
-                '<div style="font-weight:700; color:#18263D; font-size:1.05rem; margin-bottom:0.75rem;">📋 Recent Scan Details</div>'
-                f'<p style="margin:0 0 0.35rem 0; font-size:0.88rem; color:#18263D;"><strong>Target:</strong> <code>{report.project_name}</code></p>'
-                f'<p style="margin:0 0 0.35rem 0; font-size:0.88rem; color:#18263D;"><strong>Audited:</strong> {report.timestamp or "Just now"}</p>'
-                '<p style="margin:0 0 0.35rem 0; font-size:0.88rem; color:#18263D;"><strong>Status:</strong> <span class="rs-pill rs-pill-success" style="padding:0.15rem 0.5rem; font-size:0.75rem;">Completed</span></p>'
-                f'<p style="margin:0 0 0.35rem 0; font-size:0.88rem; color:#18263D;"><strong>Files Scanned:</strong> {report.files_scanned}</p>'
-                f'<p style="margin:0 0 0.35rem 0; font-size:0.88rem; color:#18263D;"><strong>Secrets Found:</strong> {len(report.secret_findings)}</p>'
-                f'<p style="margin:0 0 0.85rem 0; font-size:0.88rem; color:#18263D;"><strong>Advisories:</strong> {len(report.dependency_advisories)}</p>'
-                '</div>',
-                unsafe_allow_html=True
-            )
-            if st.button("Review All Findings →", use_container_width=True, type="secondary"):
-                st.session_state["current_page"] = "Findings"
-                st.rerun()
+    with col_center:
+        # Center: Findings by Type (SVG Donut Chart)
+        sec_count = len(report.secret_findings) if report else 0
+        dep_count = len(report.dependency_advisories) if report else 0
+        render_donut_chart(sec_count, dep_count)
 
-        with col_panel_right:
-            st.markdown(
-                '<div class="rs-card">'
-                '<div style="font-weight:700; color:#18263D; font-size:1.05rem; margin-bottom:0.75rem;">⚡ Priority Findings</div>',
-                unsafe_allow_html=True
-            )
+    with col_right:
+        # Right: Priority Findings
+        render_priority_findings_panel(report)
 
-            priority_items = []
-            for s in report.secret_findings:
-                if s.severity in ("Critical", "High"):
-                    priority_items.append(("secret", s))
-            for a in report.dependency_advisories:
-                if a.severity in ("Critical", "High"):
-                    priority_items.append(("dependency", a))
+    st.markdown("<div style='margin-top:0.75rem;'></div>", unsafe_allow_html=True)
 
-            if not priority_items:
-                st.markdown(
-                    '<p style="color:#64748B; font-size:0.88rem; padding:0.5rem 0;">✓ No critical or high-severity findings detected.</p>',
-                    unsafe_allow_html=True
-                )
-            else:
-                for p_type, item in priority_items[:4]:
-                    sev_badge = get_severity_badge_html(item.severity)
-                    type_badge = get_type_badge_html("Secret" if p_type == "secret" else "Dependency")
-                    title = item.rule if p_type == "secret" else f"{item.package} ({item.version}) — {item.id}"
-                    loc = f"{item.file}:{item.line}" if p_type == "secret" else (item.source or "package.json")
+    # 4. Quick Actions (4 Horizontally Aligned Action Cards)
+    render_quick_actions()
 
-                    row_html = (
-                        '<div class="rs-row">'
-                        f'<div style="display:flex; align-items:center; gap:0.65rem; flex-wrap:wrap;">'
-                        f'{sev_badge} {type_badge}'
-                        f'<span style="font-weight:600; color:#18263D; font-size:0.88rem;">{title}</span>'
-                        f'<span style="color:#64748B; font-size:0.8rem; font-family:monospace;">{loc}</span>'
-                        '</div></div>'
-                    )
-                    st.markdown(row_html, unsafe_allow_html=True)
-
-                if st.button("Inspect All Findings in Detail →", key="btn_inspect_detail", use_container_width=True):
-                    st.session_state["current_page"] = "Findings"
-                    st.rerun()
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-    else:
-        # Empty State when no scan has been run
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            render_metric_card("Critical Findings", "—", "Awaiting scan", variant="default")
-        with m2:
-            render_metric_card("High Findings", "—", "Awaiting scan", variant="default")
-        with m3:
-            render_metric_card("OSV Vulnerabilities", "—", "Awaiting scan", variant="default")
-        with m4:
-            render_metric_card("Files Scanned", "—", "Awaiting scan", variant="default")
-
-        render_empty_state(
-            icon="🛡️",
-            title="No Repository Scanned Yet",
-            description="Upload a project ZIP snapshot or provide a local directory path to discover hardcoded secrets, trace OSV vulnerabilities, and verify fixes in an isolated sandbox.",
-        )
 
 
 # ==============================================================================
