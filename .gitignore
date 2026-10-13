@@ -1,0 +1,39 @@
+# Python & Virtual Environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Temporary and report outputs
+reposentinel-report.json
+reposentinel-report.md
+reposentinel-report.sarif
+test_generated_edges.py
+*.tmp
+temp_*
+reposentinel_temp_*
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
