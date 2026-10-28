@@ -94,7 +94,7 @@ RepoSentinel AI features a modern, high-contrast SaaS interface with a deep navy
 **Windows (PowerShell):**
 ```powershell
 # Clone the repository
-git clone https://github.com/<your-username>/reposentinel-ai.git
+git clone https://github.com/Swaraj0160/reposentinel-ai.git
 cd reposentinel-ai
 
 # Create and activate virtual environment
@@ -109,7 +109,7 @@ pip install -r requirements.txt
 **Linux / macOS (Bash):**
 ```bash
 # Clone the repository
-git clone https://github.com/<your-username>/reposentinel-ai.git
+git clone https://github.com/Swaraj0160/reposentinel-ai.git
 cd reposentinel-ai
 
 # Create and activate virtual environment
